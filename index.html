@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Puerto Rico · Panapén — Dashboard Ejecutivo</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+<style>
+  :root{
+    --bg:#0a0e27; --bg2:#121833; --bg3:#1c2244; --line:#2a3160;
+    --text:#f1f5f9; --muted:#94a3b8; --dim:#64748b;
+    --pr-red:#E4002B; --pr-blue:#0050B3; --pr-blue-l:#3b82f6;
+    --amber:#f59e0b; --amber-l:#fbbf24;
+    --green:#22c55e; --red:#ef4444; --wa:#25D366;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);font-size:15px;line-height:1.5}
+
+  header{background:linear-gradient(135deg,#121833 0%,#0a0e27 100%);padding:22px 40px;border-bottom:1px solid var(--line);position:relative;overflow:hidden}
+  header::before{content:"";position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,var(--pr-red) 0%,var(--pr-red) 25%,white 25%,white 50%,var(--pr-blue) 50%,var(--pr-blue) 75%,var(--pr-red) 75%,var(--pr-red) 100%)}
+  header .brand{display:flex;align-items:center;gap:14px;margin-bottom:6px}
+  header .seal{width:38px;height:38px;border-radius:50%;background:radial-gradient(circle at 30% 30%,#3b82f6,#1e40af);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px;color:white;border:2px solid rgba(255,255,255,.2)}
+  header h1{font-size:22px;font-weight:700;letter-spacing:-.3px}
+  header .sub{color:var(--muted);font-size:13px;margin-left:52px}
+  .header-badges{display:flex;gap:8px;margin-top:14px;margin-left:52px;flex-wrap:wrap}
+  .hbadge{padding:5px 12px;border-radius:999px;font-size:11px;font-weight:600;letter-spacing:.3px}
+  .hb-warn{background:rgba(251,191,36,.15);color:#fbbf24;border:1px solid rgba(251,191,36,.35)}
+  .hb-info{background:rgba(59,130,246,.15);color:#60a5fa;border:1px solid rgba(59,130,246,.35)}
+  .hb-ok{background:rgba(34,197,94,.15);color:#4ade80;border:1px solid rgba(34,197,94,.35)}
+
+  main{padding:28px 40px;max-width:1500px;margin:0 auto}
+
+  .hero{display:grid;grid-template-columns:1.7fr 1fr;gap:20px;margin-bottom:28px}
+  @media(max-width:1000px){.hero{grid-template-columns:1fr}}
+  .map-card{background:var(--bg2);border:1px solid var(--line);border-radius:16px;padding:20px 22px;display:flex;flex-direction:column}
+  .section-tag{display:inline-block;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--pr-blue-l);margin-bottom:8px}
+  .map-card h2{font-size:20px;font-weight:700;margin-bottom:4px;letter-spacing:-.3px}
+  .map-card .map-sub{font-size:13px;color:var(--muted);margin-bottom:14px}
+
+  .map-container{position:relative;flex:1;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:#061020;min-height:440px}
+  #worldSvg{width:100%;height:100%;display:block;cursor:grab;background:transparent}
+  #worldSvg:active{cursor:grabbing}
+  .zoom-controls{position:absolute;top:12px;right:12px;display:flex;flex-direction:column;gap:6px;z-index:5}
+  .zoom-controls button{width:38px;height:38px;border-radius:9px;background:rgba(18,24,51,.9);border:1px solid var(--line);color:var(--text);font-size:18px;font-weight:700;cursor:pointer;backdrop-filter:blur(4px);transition:all .15s;font-family:inherit;line-height:1}
+  .zoom-controls button:hover{background:var(--pr-blue-l);color:#0a0e27;border-color:var(--pr-blue-l);transform:scale(1.05)}
+  .zoom-controls button:active{transform:scale(0.95)}
+  .map-hint{position:absolute;bottom:12px;left:12px;background:rgba(10,14,39,.85);border:1px solid var(--line);color:var(--muted);padding:6px 12px;border-radius:8px;font-size:10.5px;z-index:5;backdrop-filter:blur(4px);pointer-events:none}
+  .map-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,14,39,.92);color:var(--muted);font-size:13px;z-index:10;transition:opacity .4s;flex-direction:column;gap:12px}
+  .map-loading.hide{opacity:0;pointer-events:none}
+  .map-loading .spinner{width:36px;height:36px;border:3px solid var(--line);border-top-color:var(--pr-blue-l);border-radius:50%;animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .map-legend{display:flex;gap:16px;margin-top:12px;font-size:11.5px;color:var(--muted);flex-wrap:wrap}
+  .map-legend span{display:inline-flex;align-items:center;gap:6px}
+  .dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+  .dot-pr{background:linear-gradient(135deg,#E4002B,#0050B3);box-shadow:0 0 0 3px rgba(255,255,255,.15)}
+  .dot-op{background:#22c55e}
+  .dot-sig{background:#fbbf24}
+  .dot-lic{background:#3b82f6}
+  .dot-dsc{background:#475569;border:1px dashed #94a3b8}
+
+  .stats-card{background:linear-gradient(160deg,#121833,#1a2145);border:1px solid var(--line);border-radius:16px;padding:22px 24px;display:flex;flex-direction:column;gap:12px}
+  .stat-big{display:flex;align-items:center;gap:16px;padding:10px 0;border-bottom:1px solid var(--line)}
+  .stat-big:last-child{border-bottom:none}
+  .stat-big .num{font-size:42px;font-weight:800;line-height:1;letter-spacing:-2px;color:white;min-width:64px}
+  .stat-big .num.red{color:var(--pr-red)}
+  .stat-big .num.amber{color:var(--amber)}
+  .stat-big .num.blue{color:var(--pr-blue-l)}
+  .stat-big .num.green{color:var(--green)}
+  .stat-big .lbl{font-size:13px;color:var(--muted);line-height:1.35}
+  .stat-big .lbl strong{color:var(--text);display:block;font-size:14px;font-weight:600}
+  .stat-warn{background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);border-radius:10px;padding:12px 14px;font-size:12px;color:#fbbf24;line-height:1.45;margin-top:4px}
+
+  h3.group-title{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:16px}
+
+  .action-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-bottom:32px}
+  @media(max-width:900px){.action-grid{grid-template-columns:1fr}}
+  .acard{background:var(--bg2);border:1px solid var(--line);border-radius:16px;overflow:hidden;display:flex;flex-direction:column}
+  .acard-head{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
+  .acard-head .icon{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800}
+  .acard-head .txt h4{font-size:15px;font-weight:700;letter-spacing:-.2px}
+  .acard-head .txt p{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .acard.red .acard-head{border-left:4px solid var(--pr-red)}
+  .acard.red .acard-head .icon{background:rgba(228,0,43,.15);color:#ff6b81}
+  .acard.amber .acard-head{border-left:4px solid var(--amber)}
+  .acard.amber .acard-head .icon{background:rgba(245,158,11,.15);color:var(--amber-l)}
+  .acard.blue .acard-head{border-left:4px solid var(--pr-blue-l)}
+  .acard.blue .acard-head .icon{background:rgba(59,130,246,.15);color:var(--pr-blue-l)}
+  .acard-body{padding:6px 0;flex:1}
+  .lead-item{padding:12px 20px;border-bottom:1px solid rgba(42,49,96,.5);cursor:pointer;transition:background .15s}
+  .lead-item:last-child{border-bottom:none}
+  .lead-item:hover{background:rgba(59,130,246,.08)}
+  .lead-item .name{font-size:13.5px;font-weight:600;color:var(--text);margin-bottom:3px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .lead-item .name .arr{color:var(--dim);font-size:11px}
+  .lead-item .meta{font-size:11.5px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+  .lead-item .meta .tag{padding:1px 7px;border-radius:4px;background:rgba(255,255,255,.06);font-size:10.5px;color:var(--muted)}
+  .lead-item .sig{font-size:11px;color:var(--dim);font-style:italic;line-height:1.35}
+  .acard-foot{padding:10px 20px;background:rgba(0,0,0,.15);border-top:1px solid var(--line);font-size:11px;color:var(--dim);text-align:center}
+
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:32px}
+  @media(max-width:900px){.split{grid-template-columns:1fr}}
+  .panel{background:var(--bg2);border:1px solid var(--line);border-radius:16px;padding:22px 24px}
+  .panel h3{font-size:15px;font-weight:700;margin-bottom:4px}
+  .panel .panel-sub{font-size:12px;color:var(--muted);margin-bottom:18px}
+
+  .hegemon-row{display:flex;gap:14px;padding:14px 0;border-bottom:1px solid var(--line);align-items:flex-start}
+  .hegemon-row:last-child{border-bottom:none}
+  .hegemon-row .letter{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;flex-shrink:0}
+  .hegemon-row .letter.red{background:rgba(228,0,43,.2);color:#ff6b81;border:1px solid rgba(228,0,43,.4)}
+  .hegemon-row .letter.green{background:rgba(34,197,94,.15);color:#4ade80;border:1px solid rgba(34,197,94,.35)}
+  .hegemon-row .info{flex:1}
+  .hegemon-row .info h5{font-size:13px;font-weight:700;margin-bottom:3px}
+  .hegemon-row .info p{font-size:11.5px;color:var(--muted);line-height:1.5}
+  .hegemon-row .info .named{margin-top:5px;font-size:11.5px;color:#fbbf24}
+  .hegemon-row .info .named strong{color:#fff}
+  .zone-bar{display:flex;height:8px;border-radius:4px;overflow:hidden;margin:8px 0 4px}
+  .zone-bar .seg{height:100%}
+  .zone-bar .seg.red{background:linear-gradient(90deg,#dc2626,#ef4444)}
+  .zone-bar .seg.amber{background:linear-gradient(90deg,#d97706,#f59e0b)}
+  .zone-bar .seg.green{background:linear-gradient(90deg,#16a34a,#22c55e)}
+
+  .buyer-row{padding:12px 0;border-bottom:1px solid var(--line);cursor:pointer;transition:background .15s}
+  .buyer-row:last-child{border-bottom:none}
+  .buyer-row:hover{background:rgba(59,130,246,.06);padding-left:6px;padding-right:6px;border-radius:6px}
+  .buyer-row .br-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:4px}
+  .buyer-row .br-name{font-size:13px;font-weight:700;color:var(--text)}
+  .buyer-row .br-country{font-size:10.5px;color:var(--dim);font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+  .buyer-row .br-prod{font-size:12px;color:var(--amber-l);margin-bottom:3px}
+  .buyer-row .br-vol{font-size:11.5px;color:var(--muted);font-family:ui-monospace,monospace}
+  .buyer-row .br-vol strong{color:#fff}
+
+  .product-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:32px}
+  @media(max-width:900px){.product-grid{grid-template-columns:1fr}}
+  .pcard{background:var(--bg2);border:1px solid var(--line);border-radius:14px;padding:20px 22px;position:relative;overflow:hidden}
+  .pcard::before{content:"";position:absolute;top:0;left:0;right:0;height:3px}
+  .pcard.fresco::before{background:linear-gradient(90deg,#22c55e,#4ade80)}
+  .pcard.harina::before{background:linear-gradient(90deg,#f59e0b,#fbbf24)}
+  .pcard.deshidratado::before{background:linear-gradient(90deg,#8b5cf6,#a78bfa)}
+  .pcard .label{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px}
+  .pcard h4{font-size:16px;font-weight:700;margin-bottom:10px;letter-spacing:-.2px}
+  .pcard .vol{font-size:13px;color:#fbbf24;font-weight:600;margin-bottom:6px}
+  .pcard .vol-lbl{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
+  .pcard .who{font-size:12px;color:var(--muted);margin-top:10px;padding-top:10px;border-top:1px solid var(--line);line-height:1.5}
+  .pcard .who strong{color:var(--text)}
+
+  details{background:var(--bg2);border:1px solid var(--line);border-radius:16px;margin-bottom:24px;overflow:hidden}
+  details summary{padding:18px 24px;cursor:pointer;font-weight:700;font-size:14px;list-style:none;display:flex;justify-content:space-between;align-items:center}
+  details summary::-webkit-details-marker{display:none}
+  details summary::before{content:"▸";color:var(--pr-blue-l);margin-right:10px;transition:transform .2s}
+  details[open] summary::before{transform:rotate(90deg)}
+  details summary .count-badge{background:var(--bg3);color:var(--muted);padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600}
+  .table-wrap{overflow-x:auto;padding:0 24px 24px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  thead th{background:var(--bg3);color:var(--muted);text-align:left;padding:10px 12px;font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--line)}
+  tbody td{padding:10px 12px;border-bottom:1px solid rgba(42,49,96,.4);vertical-align:top}
+  tbody tr{transition:background .15s}
+  tbody tr[data-id]{cursor:pointer}
+  tbody tr[data-id]:hover{background:rgba(59,130,246,.08)}
+  .id{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--pr-blue-l)}
+  .pill{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10.5px;font-weight:600}
+  .pill-verde{background:rgba(34,197,94,.15);color:#4ade80}
+  .pill-amarillo{background:rgba(234,179,8,.15);color:#facc15}
+  .nd{color:var(--dim);font-style:italic}
+
+  .warn-box{background:rgba(251,191,36,.06);border:1px solid rgba(251,191,36,.25);border-radius:14px;padding:18px 22px;font-size:12.5px;color:#fde68a;line-height:1.6}
+  .warn-box strong{color:#fbbf24}
+  .warn-box ul{margin:8px 0 0 18px}
+  .warn-box li{margin-bottom:4px}
+
+  footer{padding:24px 40px;text-align:center;color:var(--dim);font-size:11px;border-top:1px solid var(--line);margin-top:16px}
+
+  .modal-back{position:fixed;inset:0;background:rgba(0,0,0,.8);display:none;align-items:center;justify-content:center;z-index:200;padding:20px;backdrop-filter:blur(4px)}
+  .modal-back.open{display:flex}
+  .modal{background:var(--bg2);border:1px solid var(--line);border-radius:16px;max-width:820px;width:100%;max-height:92vh;overflow:auto;padding:26px 30px;position:relative}
+  .modal .close{position:absolute;top:16px;right:16px;background:var(--bg3);border:none;color:var(--text);width:34px;height:34px;border-radius:9px;cursor:pointer;font-size:16px}
+  .modal .close:hover{background:#2a3160}
+  .modal h3{font-size:20px;font-weight:700;margin-bottom:4px;letter-spacing:-.3px;padding-right:40px}
+  .modal .mid{font-family:ui-monospace,monospace;color:var(--pr-blue-l);font-size:12px;margin-bottom:18px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .modal .desc-badge{background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.35);padding:2px 8px;border-radius:4px;font-size:10.5px;font-weight:600;font-family:inherit}
+  .modal .op-badge{background:rgba(34,197,94,.15);color:#4ade80;border:1px solid rgba(34,197,94,.35);padding:2px 8px;border-radius:4px;font-size:10.5px;font-weight:600;font-family:inherit}
+  .modal .sig-badge{background:rgba(251,191,36,.15);color:#fbbf24;border:1px solid rgba(251,191,36,.35);padding:2px 8px;border-radius:4px;font-size:10.5px;font-weight:600;font-family:inherit}
+  .modal .pot-badge{background:rgba(59,130,246,.15);color:#60a5fa;border:1px solid rgba(59,130,246,.35);padding:2px 8px;border-radius:4px;font-size:10.5px;font-weight:600;font-family:inherit}
+
+  .modal section.msec{margin-bottom:22px}
+  .modal section.msec h4{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:10px}
+  .req-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--line);border-radius:10px;overflow:hidden;border:1px solid var(--line)}
+  .req-grid .cell{background:var(--bg3);padding:11px 14px}
+  .req-grid .cell.wide{grid-column:1/-1}
+  .req-grid .cell .l{font-size:9.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;font-weight:600}
+  .req-grid .cell .v{font-size:13px;color:var(--text);line-height:1.4;font-weight:500}
+  .req-grid .cell .v.mono{font-family:ui-monospace,monospace;font-size:12.5px;color:#fbbf24}
+  .req-grid .cell .v.nd{color:var(--dim);font-style:italic;font-weight:400}
+
+  .chan-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}
+  .chan-btn{display:flex;align-items:center;gap:10px;padding:11px 14px;background:var(--bg3);border:1px solid var(--line);border-radius:9px;color:var(--text);text-decoration:none;font-size:12.5px;font-weight:600;transition:all .15s;cursor:pointer;text-align:left;font-family:inherit;width:100%}
+  .chan-btn:hover{border-color:var(--pr-blue-l);background:#222a52;transform:translateY(-1px)}
+  .chan-btn .ico{width:26px;height:26px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+  .chan-btn.wa .ico{background:rgba(37,211,102,.2);color:#25D366}
+  .chan-btn.em .ico{background:rgba(239,68,68,.2);color:#f87171}
+  .chan-btn.tel .ico{background:rgba(59,130,246,.2);color:#60a5fa}
+  .chan-btn.web .ico{background:rgba(168,85,247,.2);color:#c084fc}
+  .chan-btn.li .ico{background:rgba(10,102,194,.25);color:#38bdf8}
+  .chan-btn.src .ico{background:rgba(100,116,139,.25);color:#cbd5e1}
+  .chan-btn .txt{flex:1;min-width:0}
+  .chan-btn .txt .t1{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .chan-btn .txt .t2{font-size:10.5px;color:var(--muted);font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+  .no-channel{background:rgba(100,116,139,.15);border:1px dashed var(--line);border-radius:9px;padding:14px 16px;font-size:12px;color:var(--muted);line-height:1.5}
+  .no-channel strong{color:#fbbf24}
+
+  .msg-box{background:var(--bg3);border:1px solid var(--line);border-radius:10px;padding:0;overflow:hidden}
+  .msg-box .msg-head{padding:10px 14px;background:rgba(0,0,0,.2);border-bottom:1px solid var(--line);font-size:11px;color:var(--muted);display:flex;justify-content:space-between;align-items:center;gap:10px}
+  .msg-box .msg-head .copy-btn{background:var(--pr-blue-l);color:#0a0e27;border:none;padding:5px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit}
+  .msg-box .msg-head .copy-btn:hover{background:#60a5fa}
+  .msg-box .msg-head .copy-btn.ok{background:var(--green);color:white}
+  .msg-box textarea{width:100%;background:transparent;border:none;color:var(--text);padding:14px 16px;font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12px;line-height:1.6;resize:vertical;min-height:200px;outline:none}
+
+  .notes-final{background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.15);border-radius:10px;padding:12px 14px;font-size:11.5px;color:var(--muted);line-height:1.55;margin-top:14px}
+  .notes-final strong{color:#60a5fa}
+
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(100px);background:var(--green);color:white;padding:12px 24px;border-radius:10px;font-weight:600;font-size:13px;opacity:0;transition:all .3s;z-index:300;pointer-events:none}
+  .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+
+  .country{transition:fill .2s}
+  .country:hover{fill:#222a52}
+  .marker{cursor:pointer}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="seal">PR</div>
+    <h1>Puerto Rico · Panapén en el Mercado Global</h1>
+  </div>
+  <div class="sub">Piloto A — Alimentos Especializados (HS 2106 y derivados) · Documento Maestro v1.0</div>
+  <div class="header-badges">
+    <span class="hbadge hb-warn">C7 no alcanzado estrictamente · 0/8 con email/teléfono directo de persona</span>
+    <span class="hbadge hb-info">Mapa mundial realista · zoom + pan + clic</span>
+    <span class="hbadge hb-ok">Método validado · cerrado con reserva</span>
+  </div>
+</header>
+
+<main>
+
+  <section class="hero">
+    <div class="map-card">
+      <div class="section-tag">Mapa de demanda · clic en cualquier marcador</div>
+      <h2>Dónde están los compradores de panapén</h2>
+      <div class="map-sub">Puerto Rico al centro · líneas = países con señal documentada. Usa la rueda o los botones +/− para hacer zoom. Arrastra para mover el mapa.</div>
+
+      <div class="map-container">
+        <svg id="worldSvg"></svg>
+        <div class="zoom-controls">
+          <button id="zoomIn" aria-label="Acercar" title="Acercar">+</button>
+          <button id="zoomOut" aria-label="Alejar" title="Alejar">−</button>
+          <button id="zoomReset" aria-label="Reiniciar vista" title="Reiniciar">⌂</button>
+        </div>
+        <div class="map-hint">🖱 Rueda / +− para zoom · arrastrar para mover</div>
+        <div class="map-loading" id="mapLoading">
+          <div class="spinner"></div>
+          <span>Cargando mapa mundial…</span>
+        </div>
+      </div>
+
+      <div class="map-legend">
+        <span><span class="dot dot-pr"></span> Puerto Rico (origen)</span>
+        <span><span class="dot dot-op"></span> Contactable hoy</span>
+        <span><span class="dot dot-sig"></span> Señal panapén</span>
+        <span><span class="dot dot-lic"></span> Licitación</span>
+        <span><span class="dot dot-dsc"></span> Descartado</span>
+      </div>
+    </div>
+
+    <div class="stats-card">
+      <div class="stat-big"><div class="num amber">5</div><div class="lbl"><strong>compradores activos de panapén</strong>3 países: UK (3), EE.UU. (1), Canadá (1)</div></div>
+      <div class="stat-big"><div class="num red">3</div><div class="lbl"><strong>contactables hoy</strong>Yam-Man · Tesco · Kis Caribbean</div></div>
+      <div class="stat-big"><div class="num blue">4</div><div class="lbl"><strong>países con señal</strong>UK · EE.UU. · Canadá · Panamá</div></div>
+      <div class="stat-big"><div class="num green">10</div><div class="lbl"><strong>leads adoptados al Master</strong>3 + 4 + 3 por accionabilidad</div></div>
+      <div class="stat-warn">⚠️ <strong>Verdad ejecutiva:</strong> el piloto prueba el método, no cierra ventas. Los 5 panapén buyers requieren registro en go4worldbusiness/TradeKey. Solo 3 leads son contactables sin registro.</div>
+    </div>
+  </section>
+
+  <h3 class="group-title">Juego de clientes por accionabilidad · clic para abrir contacto</h3>
+  <div class="action-grid">
+    <div class="acard red">
+      <div class="acard-head"><div class="icon">🔥</div><div class="txt"><h4>Inmediato</h4><p>Contacto directo verificable · HOY</p></div></div>
+      <div class="acard-body">
+        <div class="lead-item" data-id="A2-05"><div class="name">Yam-Man Imports <span class="arr">›</span></div><div class="meta"><span class="tag">UK · Londres</span><span class="tag">CEO</span><span class="tag">WhatsApp</span></div><div class="sig">Brian Richards · 3 canales · registro 05800258</div></div>
+        <div class="lead-item" data-id="A2-06"><div class="name">Tesco PLC — World Foods <span class="arr">›</span></div><div class="meta"><span class="tag">UK · Welwyn GC</span><span class="tag">Comprador</span><span class="tag">LinkedIn</span></div><div class="sig">Shay Jones · LinkedIn verificado · categoría caribeña</div></div>
+        <div class="lead-item" data-id="A2-05b"><div class="name">Kis Caribbean Food <span class="arr">›</span></div><div class="meta"><span class="tag">UK</span><span class="tag">Compras</span><span class="tag">TradeKey</span></div><div class="sig">Kemar Walker · vía TradeKey · sub-lead</div></div>
+      </div>
+      <div class="acard-foot">Sección 5 · 3 leads operativos</div>
+    </div>
+
+    <div class="acard amber">
+      <div class="acard-head"><div class="icon">⏱</div><div class="txt"><h4>Corto plazo</h4><p>Demanda documentada · contacto tras registro</p></div></div>
+      <div class="acard-body">
+        <div class="lead-item" data-id="A2-01"><div class="name">Elaine Thomas Fresh Produce <span class="arr">›</span></div><div class="meta"><span class="tag">UK · Londres</span><span class="tag">Panapén fresco</span></div><div class="sig">1,000 kg/semana · go4worldbusiness</div></div>
+        <div class="lead-item" data-id="A2-02"><div class="name">Leo Vhafo Commercial Imports <span class="arr">›</span></div><div class="meta"><span class="tag">EE.UU. · Miami</span><span class="tag">Harina sin gluten</span></div><div class="sig">5-12 palés (1 FCL 20') · canal diáspora</div></div>
+        <div class="lead-item" data-id="A2-03"><div class="name">Violet Exotic Fruits <span class="arr">›</span></div><div class="meta"><span class="tag">UK</span><span class="tag">Panapén + jackfruit</span></div><div class="sig">1 FCL 20' · go4worldbusiness</div></div>
+        <div class="lead-item" data-id="A2-04"><div class="name">Diane James Dehydrated Products <span class="arr">›</span></div><div class="meta"><span class="tag">Canadá</span><span class="tag">Panapén deshidratado</span></div><div class="sig">MOQ · go4worldbusiness</div></div>
+      </div>
+      <div class="acard-foot">Sección 6 · 4 señales verificadas</div>
+    </div>
+
+    <div class="acard blue">
+      <div class="acard-head"><div class="icon">🎯</div><div class="txt"><h4>Potencial</h4><p>Oportunidad institucional / parcial</p></div></div>
+      <div class="acard-body">
+        <div class="lead-item" data-id="A2-09"><div class="name">IMSS Bienestar <span class="arr">›</span></div><div class="meta"><span class="tag">México · CDMX</span><span class="tag">Licitación</span></div><div class="sig">Víveres · presupuesto abierto · sin contacto</div></div>
+        <div class="lead-item" data-id="A2-10"><div class="name">INABIE <span class="arr">›</span></div><div class="meta"><span class="tag">R. Dominicana · SD</span><span class="tag">Licitación</span></div><div class="sig">RD$ 290,000,000 · escolar · sin contacto</div></div>
+        <div class="lead-item" data-id="A2-08"><div class="name">A Taste of the Caribbean <span class="arr">›</span></div><div class="meta"><span class="tag">UK · Glasgow</span><span class="tag">Sourcing a pedido</span></div><div class="sig">Tel. + email genérico · declara sourcing</div></div>
+      </div>
+      <div class="acard-foot">Sección 4.1 + 7 · 3 leads (1 parcial)</div>
+    </div>
+  </div>
+
+  <div class="split">
+    <div class="panel">
+      <h3>🏛 Hegemón y competencia identificada</h3>
+      <p class="panel-sub">Basado en C4 (invisibilidad al hegemón). El documento solo nombra un hegemón local explícito.</p>
+      <div class="hegemon-row"><div class="letter red">1</div><div class="info"><h5>Yam-Man Imports (UK)</h5><p>C4 = 3 · hegemón consolidado. Registro mercantil 05800258. Distribuidor B2B caribeño en Londres.</p><div class="named">Único hegemón con ficha: <strong>Brian Richards, CEO</strong></div></div></div>
+      <div class="hegemon-row"><div class="letter red">2</div><div class="info"><h5>Tesco PLC (UK)</h5><p>C4 = 3 · retail hegemón con categoría "African, Caribbean & Oriental" dedicada. Comprador activo (Shay Jones).</p><div class="named">Hegemón retail · no competidor directo, es canal</div></div></div>
+      <div class="hegemon-row"><div class="letter green">+</div><div class="info"><h5>Hegemón ausente o marginal en el resto</h5><p>EE.UU., Canadá, México, R. Dominicana y Caribe: el documento reporta C4 = 5 o 10 → sin hegemón nombrado. Zona de oportunidad documentada.</p></div></div>
+      <div style="margin-top:16px">
+        <div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Leads por nivel de hegemón (C4)</div>
+        <div class="zone-bar"><div class="seg red" style="width:20%"></div><div class="seg amber" style="width:30%"></div><div class="seg green" style="width:50%"></div></div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:4px"><span><span style="color:#f87171">●</span> Hegemón 10+ (2)</span><span><span style="color:#fbbf24">●</span> Marginal (3)</span><span><span style="color:#4ade80">●</span> Sin hegemón (5)</span></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>🌴 Los 5 compradores de panapén</h3>
+      <p class="panel-sub">Demanda activa documentada · clic para abrir el requerimiento y los canales de contacto.</p>
+      <div class="buyer-row" data-id="A2-01"><div class="br-head"><div class="br-name">Elaine Thomas Fresh Produce</div><div class="br-country">UK</div></div><div class="br-prod">Panapén fresco</div><div class="br-vol"><strong>1,000 kg/semana</strong> · London</div></div>
+      <div class="buyer-row" data-id="A2-02"><div class="br-head"><div class="br-name">Leo Vhafo Commercial Imports</div><div class="br-country">EE.UU.</div></div><div class="br-prod">Harina de panapén sin gluten</div><div class="br-vol"><strong>5-12 palés</strong> (1 FCL 20') · Miami</div></div>
+      <div class="buyer-row" data-id="A2-03"><div class="br-head"><div class="br-name">Violet Exotic Fruits UK</div><div class="br-country">UK</div></div><div class="br-prod">Panapén amarillo + jackfruit + rambután</div><div class="br-vol"><strong>1 FCL 20'</strong> (contenedor completo)</div></div>
+      <div class="buyer-row" data-id="A2-04"><div class="br-head"><div class="br-name">Diane James Dehydrated Products</div><div class="br-country">Canadá</div></div><div class="br-prod">Panapén deshidratado empacado</div><div class="br-vol"><strong>MOQ</strong> · cantidad específica no detectada</div></div>
+      <div class="buyer-row" data-id="A2-05b"><div class="br-head"><div class="br-name">Kis Caribbean Food</div><div class="br-country">UK</div></div><div class="br-prod">Alimentos caribeños y vegetales frescos</div><div class="br-vol">Cantidad <strong>no detectada</strong> · vía TradeKey</div></div>
+    </div>
+  </div>
+
+  <h3 class="group-title">Qué vende Puerto Rico · derivados del panapén con demanda</h3>
+  <div class="product-grid">
+    <div class="pcard fresco"><div class="label">Producto 1</div><h4>Panapén fresco</h4><div class="vol-lbl">Volumen declarado</div><div class="vol">1,000 kg/semana + 1 FCL 20'</div><div class="who"><strong>Elaine Thomas (UK)</strong> · 1,000 kg/sem · <strong>Violet (UK)</strong> · 1 contenedor 20'</div></div>
+    <div class="pcard harina"><div class="label">Producto 2</div><h4>Harina de panapén sin gluten</h4><div class="vol-lbl">Volumen declarado</div><div class="vol">5-12 palés (1 FCL 20')</div><div class="who"><strong>Leo Vhafo (Miami)</strong> · canal diáspora caribeña · wire transfer</div></div>
+    <div class="pcard deshidratado"><div class="label">Producto 3</div><h4>Panapén deshidratado empacado</h4><div class="vol-lbl">Volumen declarado</div><div class="vol">MOQ</div><div class="who"><strong>Diane James (Canadá)</strong> · derivado con valor agregado</div></div>
+  </div>
+
+  <details>
+    <summary>Ver tabla completa de leads (10 + sub-lead) y descartes <span class="count-badge">11 + 14 descartes</span></summary>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ID</th><th>Empresa</th><th>País</th><th>Producto</th><th>Tipo</th><th>Clasif.</th><th>Puntaje</th><th>Contacto</th></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div style="margin-top:22px;padding-top:18px;border-top:1px solid var(--line)">
+        <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Descartes Ronda 2A v1 (no son oportunidades)</div>
+        <table><thead><tr><th>Lead</th><th>Razón</th><th>Evidencia</th></tr></thead><tbody id="descartes-tbody"></tbody></table>
+      </div>
+    </div>
+  </details>
+
+  <div class="warn-box">
+    <strong>⚠️ Advertencias del Documento Maestro (sección 8.2) — obligatorias:</strong>
+    <ul>
+      <li>No presentar los 5 compradores de panapén como "leads con contacto" → son <strong>señales verificadas</strong>; el contacto está oculto por go4worldbusiness / TradeKey.</li>
+      <li>No presentar A2-07 (Yazmina Baloy / Panamá) como lead → <strong>descartado por target mal identificado</strong>.</li>
+      <li>No promediar scores entre leads con y sin contacto (Yam-Man C3=10 no es comparable a Elaine C3=5).</li>
+      <li>Declarar base temporal por fuente (go4worldbusiness no siempre expone fecha; licitaciones sí).</li>
+      <li><strong>C7 no se cerró estrictamente</strong> (0/8 targets con email/teléfono directo de persona). Ocultarlo sería un pasivo político.</li>
+    </ul>
+  </div>
+
+</main>
+
+<footer>Dashboard ejecutivo · datos exclusivos del Documento Maestro Piloto A v1.0 · Capa 0 — extracción sin inferencia · 2026-11-02</footer>
+
+<div class="toast" id="toast">Mensaje copiado</div>
+
+<div class="modal-back" id="modalBack">
+  <div class="modal">
+    <button class="close" id="modalClose">✕</button>
+    <h3 id="mEmpresa"></h3>
+    <div class="mid" id="mId"></div>
+    <div id="mBody"></div>
+  </div>
+</div>
+
+<script>
+const leads = [
+  {id:"A2-01", empresa:"Elaine Thomas Fresh Produce Import", pais:"UK", ciudad:"Londres",
+   producto:"Panapén fresco", volumen:"1,000 kg/semana", tipo:"Búsqueda_proveedor",
+   fuente:"go4worldbusiness", url:"https://www.go4worldbusiness.com/find?searchText=breadfruit&BuyersOrSuppliers=buyers",
+   fecha:"No detectado", contacto:"Elaine Thomas", cargo:"Buyer of Fresh Vegetables",
+   tel:"No detectado", email:"No detectado", linkedin:"No detectado", web:"No detectado",
+   c1:5,c2:5,c3:5,c4:10, score:6.25, clasif:"Amarillo", prioridad:"Alta",
+   cat:"senal", notas:"Comprador activo de panapén. Contacto oculto por go4worldbusiness."},
+  {id:"A2-02", empresa:"Leo Vhafo Commercial Imports", pais:"EE.UU.", ciudad:"Miami",
+   producto:"Harina de panapén sin gluten", volumen:"5-12 palés (1 FCL 20')", tipo:"Búsqueda_proveedor",
+   fuente:"go4worldbusiness", url:"https://www.go4worldbusiness.com/find?searchText=breadfruit&BuyersOrSuppliers=buyers",
+   fecha:"No detectado", contacto:"Leo Vhafo", cargo:"Buyer of Flour",
+   tel:"No detectado", email:"No detectado", linkedin:"No detectado", web:"No detectado",
+   c1:5,c2:5,c3:5,c4:10, score:6.25, clasif:"Amarillo", prioridad:"Alta",
+   cat:"senal", notas:"Canal étnico diáspora caribeña hacia Miami. Contacto oculto."},
+  {id:"A2-03", empresa:"Violet Exotic Fruits UK", pais:"UK", ciudad:"No detectado",
+   producto:"Panapén amarillo, jackfruit, rambután", volumen:"1 FCL 20'", tipo:"Búsqueda_proveedor",
+   fuente:"go4worldbusiness", url:"https://www.go4worldbusiness.com/find?searchText=breadfruit&BuyersOrSuppliers=buyers",
+   fecha:"2024-07-13", contacto:"Violet (apellido no detectado)", cargo:"Buyer of Fresh Fruits",
+   tel:"No detectado", email:"No detectado", linkedin:"No detectado", web:"No detectado",
+   c1:5,c2:5,c3:5,c4:10, score:6.25, clasif:"Amarillo", prioridad:"Alta",
+   cat:"senal", notas:"Comprador de volumen mayorista. Contacto oculto."},
+  {id:"A2-04", empresa:"Diane James Dehydrated Products", pais:"Canadá", ciudad:"No detectado",
+   producto:"Panapén deshidratado empacado", volumen:"MOQ", tipo:"Búsqueda_proveedor",
+   fuente:"go4worldbusiness", url:"https://www.go4worldbusiness.com/find?searchText=breadfruit&BuyersOrSuppliers=buyers",
+   fecha:"No detectado", contacto:"Diane James", cargo:"Buyer of Dehydrated Fruits",
+   tel:"No detectado", email:"No detectado", linkedin:"No detectado", web:"No detectado",
+   c1:3,c2:5,c3:5,c4:10, score:5.75, clasif:"Amarillo", prioridad:"Media",
+   cat:"senal", notas:"Derivado de panapén (deshidratado). Contacto oculto."},
+  {id:"A2-05", empresa:"Yam-Man Imports", pais:"UK", ciudad:"Londres",
+   producto:"Alimentos caribeños (Jamaica)", volumen:"No detectado", tipo:"Registro_importador_brecha",
+   fuente:"Sitio corporativo + Companies House + LinkedIn", url:"https://yamman.co.uk",
+   fecha:"2026 (consulta)", contacto:"Brian Richards", cargo:"CEO",
+   tel:"+44 7852 933 083; +44 7947 948 322; +44 20 8527 1741", email:"info@yamman.co.uk", linkedin:"Verificado (búsqueda manual)", web:"https://yamman.co.uk",
+   c1:3,c2:10,c3:10,c4:3, score:6.50, clasif:"Amarillo", prioridad:"Alta",
+   cat:"operativo", notas:"Contacto multicanal. Registro mercantil 05800258. Hegemón local (C4=3)."},
+  {id:"A2-05b", empresa:"Kis Caribbean Food", pais:"UK", ciudad:"No detectado",
+   producto:"Alimentos caribeños y vegetales frescos", volumen:"No detectado", tipo:"No detectado",
+   fuente:"TradeKey buy offer 3755917", url:"https://www.tradekey.com",
+   fecha:"No detectado", contacto:"Kemar Walker", cargo:"Representante de Compras",
+   tel:"No detectado", email:"No detectado", linkedin:"No detectado", web:"No detectado",
+   c1:"No detectado",c2:"No detectado",c3:"No detectado",c4:10, score:"No detectado", clasif:"No detectado", prioridad:"No detectado",
+   cat:"operativo", sublead:true, notas:"Contacto vía TradeKey (registro). Sub-lead de A2-05. Sección 5 y 6 del documento."},
+  {id:"A2-06", empresa:"Tesco PLC — World Foods", pais:"UK", ciudad:"Welwyn Garden City",
+   producto:"Categoría African, Caribbean & Oriental", volumen:"No detectado", tipo:"Registro_importador_brecha",
+   fuente:"LinkedIn del comprador + oferta de empleo", url:"https://uk.linkedin.com/in/shayjones",
+   fecha:"2026-09-11", contacto:"Shay Jones", cargo:"Assistant Buyer",
+   tel:"No detectado", email:"No detectado", linkedin:"Verificado (LinkedIn)", web:"No detectado",
+   c1:3,c2:10,c3:5,c4:3, score:5.25, clasif:"Amarillo", prioridad:"Alta",
+   cat:"operativo", notas:"Categoría caribeña dedicada en Tesco. LinkedIn verificado. Sin email/teléfono."},
+  {id:"A2-07", empresa:"Ministerio de la Presidencia / DGCP Panamá", pais:"Panamá", ciudad:"Ciudad de Panamá",
+   producto:"Alimentos para consumo humano", volumen:"Licitación abierta", tipo:"Licitación",
+   fuente:"PanamaCompra", url:"https://compendio.panamacompra.gob.pa/wp-content/uploads/2024/10/DGCP-DS-DJ-1275-2024-MINISTERIO-DE-LA-PRESIDENCIA-COTIZACION-EN-LINEA-fdo.pdf",
+   fecha:"2024-09-11", contacto:"Yazmina Baloy (descartada)", cargo:"Claim no verificado",
+   tel:"(+507) 515-1500 (switchboard)", email:"No detectado", linkedin:"No detectado", web:"No detectado",
+   c1:10,c2:3,c3:10,c4:5, score:7.00, clasif:"Verde", prioridad:"Máxima",
+   cat:"descartado", notas:"Target mal identificado. Descartar como lead de panapén. (Sección 7)"},
+  {id:"A2-08", empresa:"A Taste of the Caribbean Ltd", pais:"UK", ciudad:"Glasgow",
+   producto:"Productos caribeños (abastecimiento a pedido)", volumen:"No detectado", tipo:"Búsqueda_proveedor",
+   fuente:"Sitio corporativo", url:"https://www.atasteofthecaribbeanltd.co.uk/",
+   fecha:"No detectado", contacto:"No detectado", cargo:"No detectado",
+   tel:"0141 374 0767", email:"info@atasteofthecaribbeanltd.co.uk", linkedin:"No detectado", web:"https://www.atasteofthecaribbeanltd.co.uk/",
+   c1:3,c2:5,c3:3,c4:5, score:4.00, clasif:"Amarillo", prioridad:"Media",
+   cat:"potencial", notas:"Declara abastecimiento a pedido. Email genérico. Contacto parcial."},
+  {id:"A2-09", empresa:"IMSS Bienestar", pais:"México", ciudad:"Ciudad de México",
+   producto:"Víveres y productos alimenticios", volumen:"Presupuesto abierto", tipo:"Licitación",
+   fuente:"Compras MX", url:"https://imssbienestar.gob.mx/assets/doc/accesos_directos/08_informes/04/Testimonio%20V%C3%ADveres.pdf",
+   fecha:"2026-03-11", contacto:"No detectado", cargo:"No detectado",
+   tel:"No detectado", email:"No detectado", linkedin:"No detectado", web:"No detectado",
+   c1:10,c2:3,c3:0,c4:5, score:4.50, clasif:"Amarillo", prioridad:"Media",
+   cat:"potencial", notas:"Licitación masiva. Sin contacto. C1+C2+C4=18≥15."},
+  {id:"A2-10", empresa:"INABIE", pais:"R. Dominicana", ciudad:"Santo Domingo",
+   producto:"Alimentos crudos y procesados", volumen:"RD$ 290,000,000", tipo:"Licitación",
+   fuente:"DGCP República Dominicana", url:"https://www.dgcp.gob.do/noticias/licitaran-alimento-escolar-por-rd-290-millones/",
+   fecha:"No detectado", contacto:"No detectado", cargo:"No detectado",
+   tel:"No detectado", email:"No detectado", linkedin:"No detectado", web:"No detectado",
+   c1:10,c2:3,c3:0,c4:5, score:4.50, clasif:"Amarillo", prioridad:"Media",
+   cat:"potencial", notas:"Licitación escolar. Sin contacto. C1+C2+C4=18≥15."}
+];
+
+const descartesV1 = [
+  ["Distribuidora de Nueces, Miel y Pistaches Torreón","URL inválida: PDF de Pemex sobre medicamentos.","Qwen (v1)"],
+  ["Malibe Export & Import","Sin señal de necesidad. C1+C2+C4=8<15.","DeepSeek (v1)"],
+  ["DANKAR TRADE","Sin contacto. C1+C2+C4=10<15.","Perplexity (v1)"],
+  ["Caribbean Global","Sin contacto directo. Solo nombre de propietario.","DeepSeek (v1)"],
+  ["Euromarket Rioja","Hegemón local (14 sedes). C4=3.","Z.AI (v1)"],
+  ["Ibero Express","Señal débil. Sin necesidad específica.","DeepSeek/Gemini (v1)"],
+  ["Productos Tropicales","Catálogo sin línea PR. C4=5 sin búsqueda activa.","Qwen/Z.AI (v1)"],
+  ["D'Carnilsa","C4=7 pero sin búsqueda activa documentada.","Qwen/Gemini (v1)"],
+  ["Jota Jota Foods","Catálogo sin línea PR. C4=3.","Qwen/Z.AI (v1)"],
+  ["MundoFoods","Compra activa de PR pero sin contacto. Se mantiene como señal.","Z.AI (v1)"],
+  ["CAMASA IBERICA","C4=7 pero sin búsqueda activa.","Qwen (v1)"],
+  ["Alimentos Polar España","Feria sin comprador identificado. C4=5.","Z.AI (v1)"],
+  ["Latino Foods / Tienda Latina","Fuente genérica. C4=7 sin búsqueda activa.","Gemini (v1)"],
+  ["A2-07 / Yazmina Baloy (DGCP Panamá)","Target mal identificado. Descartado.","Z.AI/ChatGPT/Perplexity"]
+];
+
+const $ = s => document.querySelector(s);
+const nd = v => v===undefined||v===null||v===""||v==="No detectado";
+const val = v => nd(v) ? '<span class="nd">No detectado</span>' : v;
+const e = s => encodeURIComponent(s);
+const fmtPhone = p => p.replace(/[^\d]/g,'');
+
+function extractFormat(producto){
+  if (nd(producto)) return "No detectado";
+  const p = producto.toLowerCase();
+  if (p.includes("fresco")) return "Fresco";
+  if (p.includes("harina")) return "Harina";
+  if (p.includes("deshidratado")) return "Deshidratado empacado";
+  if (p.includes("procesado")) return "Procesado";
+  return "Según descripción del comprador";
+}
+
+function generateMessage(lead){
+  const producto = nd(lead.producto) ? "No detectado" : lead.producto;
+  const cantidad = nd(lead.volumen) ? "No detectado (consultar)" : lead.volumen;
+  const formato = extractFormat(lead.producto);
+  const plazo = nd(lead.fecha) ? "No detectado (consultar directo)" : lead.fecha;
+  const destino = [lead.pais, lead.ciudad].filter(x => !nd(x)).join(" · ");
+  const saludo = lead.contacto && !nd(lead.contacto) && !lead.contacto.startsWith("No") ? `Hola ${lead.contacto.split(" (")[0]},` : "Hola,";
+  const isBuyer = ["A2-01","A2-02","A2-03","A2-04"].includes(lead.id);
+
+  if (isBuyer) {
+    return `${saludo}
+
+Soy [tu nombre] de [tu empresa], proveedor de productos puertorriqueños. Vi su solicitud pública en ${lead.fuente} donde requiere:
+
+• Producto: ${producto}
+• Cantidad: ${cantidad}
+• Formato: ${formato}
+• Plazo / urgencia: ${plazo}
+• Destino: ${destino}
+
+Somos proveedores de panapén / breadfruit desde Puerto Rico. Podemos abastecer el volumen solicitado y coordinar logística hacia ${destino.split(" · ")[0]}.
+
+¿Podemos agendar una llamada breve para confirmar cronograma, empaque y condiciones de pago?
+
+Saludos cordiales,
+[Tu nombre]
+[Tu empresa] · Puerto Rico`;
+  }
+
+  if (lead.id === "A2-05") {
+    return `Estimado ${lead.contacto},
+
+Me dirijo a usted en su calidad de ${lead.cargo} de ${lead.empresa}. Somos un proveedor de productos puertorriqueños especializado en panapén / breadfruit y derivados (fresco, harina sin gluten, deshidratado).
+
+Sabemos que ${lead.empresa} distribuye alimentos caribeños en el Reino Unido (registro mercantil 05800258). Nos gustaría explorar una colaboración para el suministro de panapén puertorriqueño de alta calidad, con trazabilidad y capacidad de volumen.
+
+¿Tendría disponibilidad para una breve llamada esta semana?
+
+Saludos cordiales,
+[Tu nombre]
+[Tu empresa] · Puerto Rico`;
+  }
+
+  if (lead.id === "A2-06") {
+    return `Hola Shay, vi que gestionas la categoría African, Caribbean & Oriental en Tesco. Trabajo con proveedores de panapén puertorriqueño (fresco y derivados). ¿Tendrías 15 minutos para explorar una posible colaboración para la categoría? Gracias.`;
+  }
+
+  if (lead.id === "A2-05b") {
+    return `Hola Kemar, vi su interés en alimentos caribeños y vegetales frescos en TradeKey (oferta 3755917). Somos proveedores de panapén / breadfruit puertorriqueño. ¿Podemos conversar sobre una posible colaboración?`;
+  }
+
+  if (lead.id === "A2-08") {
+    return `Hola,
+
+Vi en su sitio web que ofrecen abastecer productos específicos a pedido para clientes del Reino Unido. Somos proveedores de panapén / breadfruit puertorriqueño (fresco, harina sin gluten, deshidratado).
+
+¿Podríamos enviarles nuestro catálogo y precios para evaluar una colaboración?
+
+Saludos cordiales,
+[Tu nombre]
+[Tu empresa] · Puerto Rico`;
+  }
+
+  if (lead.id === "A2-07") {
+    return `[Lead descartado · target mal identificado · no enviar mensaje]`;
+  }
+
+  return `Hola, me interesa conversar sobre ${producto} (${cantidad}). Somos proveedores puertorriqueños. ¿Podemos coordinar?`;
+}
+
+function buildChannels(lead){
+  const chans = [];
+  const msg = generateMessage(lead);
+
+  if (lead.id === "A2-05") {
+    chans.push({ type:"wa", label:"WhatsApp", sub:"+44 7852 933 083 (móvil)", href:`https://wa.me/447852933083?text=${e(msg)}`, icon:"💬" });
+    chans.push({ type:"wa", label:"WhatsApp", sub:"+44 7947 948 322 (móvil)", href:`https://wa.me/447947948322?text=${e(msg)}`, icon:"💬" });
+  }
+
+  if (lead.email && lead.email !== "No detectado") {
+    const subj = `Consulta sobre ${lead.producto || 'producto'} — proveedor puertorriqueño`;
+    chans.push({ type:"em", label:"Email", sub:lead.email + (lead.email.includes("info@")?" (genérico)":""), href:`mailto:${lead.email.split(" ")[0]}?subject=${e(subj)}&body=${e(msg)}`, icon:"✉️" });
+  }
+
+  if (lead.tel && lead.tel !== "No detectado" && lead.tel !== "(+507) 515-1500 (switchboard)") {
+    const tel = fmtPhone(lead.tel.split(";")[0]);
+    if (tel) chans.push({ type:"tel", label:"Llamar", sub:lead.tel.split(";")[0].trim(), href:`tel:+${tel}`, icon:"📞" });
+  }
+
+  if (lead.web && lead.web !== "No detectado") {
+    chans.push({ type:"web", label:"Sitio web", sub:lead.web.replace("https://","").replace("http://","").replace(/\/$/,""), href:lead.web, icon:"🌐" });
+  }
+
+  if (lead.id === "A2-06") {
+    chans.push({ type:"li", label:"LinkedIn", sub:"Shay Jones", href:"https://uk.linkedin.com/in/shayjones", icon:"in" });
+  } else if (lead.id === "A2-05") {
+    chans.push({ type:"li", label:"LinkedIn", sub:"Brian Richards (búsqueda manual)", href:"https://www.linkedin.com/search/results/all/?keywords=Brian+Richards+Yam-Man", icon:"in" });
+  }
+
+  if (lead.url && lead.url !== "No detectado" && !["A2-05","A2-06","A2-08"].includes(lead.id)) {
+    const labelMap = {
+      "A2-01":"Ver solicitud en go4worldbusiness","A2-02":"Ver solicitud en go4worldbusiness",
+      "A2-03":"Ver solicitud en go4worldbusiness","A2-04":"Ver solicitud en go4worldbusiness",
+      "A2-05b":"Ver oferta en TradeKey (registro)","A2-07":"Ver convocatoria PanamaCompra (descartado)",
+      "A2-09":"Ver convocatoria Compras MX","A2-10":"Ver convocatoria DGCP"
+    };
+    chans.push({ type:"src", label:labelMap[lead.id] || "Ver fuente", sub:lead.fuente, href:lead.url, icon:"🔗" });
+  }
+
+  return chans;
+}
+
+function openModal(lead){
+  $("#mEmpresa").textContent = lead.empresa;
+  const badges = [];
+  if (lead.cat === "operativo") badges.push('<span class="op-badge">Contacto operativo</span>');
+  if (lead.cat === "senal") badges.push('<span class="sig-badge">Señal sin contacto</span>');
+  if (lead.cat === "potencial") badges.push('<span class="pot-badge">Potencial</span>');
+  if (lead.cat === "descartado") badges.push('<span class="desc-badge">Descartado</span>');
+  if (lead.sublead) badges.push('<span class="sig-badge">Sub-lead</span>');
+  $("#mId").innerHTML = `${lead.id} ${badges.join(" ")}`;
+
+  const formato = extractFormat(lead.producto);
+  const plazo = lead.fecha && lead.fecha !== "No detectado" ? lead.fecha : "No detectado";
+  const cond = lead.id === "A2-02" ? "Wire Transfer" : "No detectado";
+  const destino = [lead.pais, lead.ciudad].filter(x => !nd(x)).join(" · ");
+
+  const reqGrid = `
+    <div class="req-grid">
+      <div class="cell wide"><div class="l">Producto solicitado (textual del Documento Maestro)</div><div class="v">${val(lead.producto)}</div></div>
+      <div class="cell"><div class="l">Cantidad / volumen declarado</div><div class="v mono">${val(lead.volumen)}</div></div>
+      <div class="cell"><div class="l">Formato / presentación</div><div class="v">${formato}</div></div>
+      <div class="cell"><div class="l">Plazo / urgencia</div><div class="v ${plazo==='No detectado'?'nd':''}">${plazo}</div></div>
+      <div class="cell"><div class="l">Destino</div><div class="v">${destino}</div></div>
+      <div class="cell"><div class="l">Condiciones de pago declaradas</div><div class="v ${cond==='No detectado'?'nd':''}">${cond}</div></div>
+      <div class="cell"><div class="l">Tipo de señal</div><div class="v">${val(lead.tipo)}</div></div>
+    </div>`;
+
+  const chans = buildChannels(lead);
+  let chansHTML;
+  if (chans.length === 0) {
+    chansHTML = `<div class="no-channel"><strong>Sin canal directo detectable.</strong> ${lead.cat==='senal'?'El comprador publicó su solicitud en una plataforma que oculta el contacto.':'No hay canal accionable en el Documento Maestro.'} Usa el botón "Copiar mensaje sugerido" para tenerlo listo cuando obtengas el contacto.</div>`;
+  } else {
+    chansHTML = `<div class="chan-grid">${chans.map(c => {
+      return `<a class="chan-btn ${c.type}" href="${c.href}" target="_blank" rel="noopener">
+        <div class="ico">${c.icon}</div>
+        <div class="txt"><div class="t1">${c.label}</div><div class="t2">${c.sub}</div></div>
+      </a>`;
+    }).join("")}</div>`;
+  }
+
+  const mensaje = generateMessage(lead);
+  const msgId = "msg_" + lead.id;
+  const notes = lead.notas || "No detectado";
+
+  $("#mBody").innerHTML = `
+    <section class="msec">
+      <h4>📋 Requerimiento del cliente</h4>
+      ${reqGrid}
+    </section>
+    <section class="msec">
+      <h4>📞 Canales de contacto</h4>
+      ${chansHTML}
+    </section>
+    <section class="msec">
+      <h4>✉️ Mensaje sugerido (listo para copiar o enviar)</h4>
+      <div class="msg-box">
+        <div class="msg-head">
+          <span>Plantilla generada a partir de los datos del Documento Maestro</span>
+          <button class="copy-btn" data-copy="${msgId}">📋 Copiar mensaje</button>
+        </div>
+        <textarea id="${msgId}" readonly>${mensaje}</textarea>
+      </div>
+    </section>
+    <section class="msec">
+      <h4>📝 Notas del Documento Maestro</h4>
+      <div class="notes-final"><strong>Nota:</strong> ${notes}</div>
+    </section>
+    <div style="font-size:11px;color:var(--dim);line-height:1.5;margin-top:8px;padding-top:12px;border-top:1px solid var(--line)">
+      <strong style="color:var(--muted)">Fuente:</strong> ${val(lead.fuente)} — <a href="${lead.url}" target="_blank" style="color:var(--pr-blue-l)">${lead.url==="No detectado"?"No detectado":"abrir URL"}</a><br>
+      <strong style="color:var(--muted)">Fecha de señal:</strong> ${val(lead.fecha)} · <strong style="color:var(--muted)">Clasificación:</strong> ${val(lead.clasif)} · <strong style="color:var(--muted)">Prioridad:</strong> ${val(lead.prioridad)} · <strong style="color:var(--muted)">Puntaje:</strong> ${nd(lead.score)?'No detectado':lead.score.toFixed(2)}<br>
+      <strong style="color:var(--muted)">C1:</strong> ${nd(lead.c1)?'No detectado':lead.c1} · <strong style="color:var(--muted)">C2:</strong> ${nd(lead.c2)?'No detectado':lead.c2} · <strong style="color:var(--muted)">C3:</strong> ${nd(lead.c3)?'No detectado':lead.c3} · <strong style="color:var(--muted)">C4:</strong> ${nd(lead.c4)?'No detectado':lead.c4}
+    </div>`;
+
+  $("#modalBack").classList.add("open");
+
+  document.querySelectorAll("[data-copy]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const ta = document.getElementById(btn.dataset.copy);
+      ta.select();
+      navigator.clipboard.writeText(ta.value).then(() => {
+        btn.textContent = "✓ Copiado";
+        btn.classList.add("ok");
+        showToast("Mensaje copiado al portapapeles");
+        setTimeout(() => { btn.textContent = "📋 Copiar mensaje"; btn.classList.remove("ok"); }, 2000);
+      });
+    });
+  });
+}
+
+function showToast(text){
+  const t = $("#toast");
+  t.textContent = text;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 2200);
+}
+
+$("#modalClose").addEventListener("click", () => $("#modalBack").classList.remove("open"));
+$("#modalBack").addEventListener("click", ev => { if(ev.target.id === "modalBack") $("#modalBack").classList.remove("open"); });
+
+function renderTable(){
+  const tbody = $("#tbody");
+  leads.forEach(l => {
+    const tr = document.createElement("tr");
+    tr.dataset.id = l.id;
+    tr.innerHTML = `
+      <td><span class="id">${l.id}</span></td>
+      <td>${l.empresa}</td>
+      <td>${val(l.pais)}</td>
+      <td>${val(l.producto)}</td>
+      <td>${val(l.tipo)}</td>
+      <td>${l.clasif==="Verde"?'<span class="pill pill-verde">Verde</span>':l.clasif==="Amarillo"?'<span class="pill pill-amarillo">Amarillo</span>':val(l.clasif)}</td>
+      <td>${nd(l.score)?'<span class="nd">No detectado</span>':l.score.toFixed(2)}</td>
+      <td>${val(l.contacto)}</td>`;
+    tr.addEventListener("click", () => openModal(l));
+    tbody.appendChild(tr);
+  });
+  const dt = $("#descartes-tbody");
+  descartesV1.forEach(r => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${r[0]}</td><td>${r[1]}</td><td style="color:var(--dim)">${r[2]}</td>`;
+    dt.appendChild(tr);
+  });
+}
+
+document.querySelectorAll(".lead-item[data-id], .buyer-row[data-id]").forEach(el => {
+  el.addEventListener("click", () => {
+    const lead = leads.find(l => l.id === el.dataset.id);
+    if (lead) openModal(lead);
+  });
+});
+
+/* ==================== MAPA MUNDIAL CON D3 ==================== */
+const svgEl = document.getElementById("worldSvg");
+const svg = d3.select(svgEl);
+const W = 1000, H = 500;
+
+svg.attr("viewBox", `0 0 ${W} ${H}`)
+   .attr("preserveAspectRatio", "xMidYMid meet");
+
+const projection = d3.geoNaturalEarth1()
+  .scale(160)
+  .translate([W/2, H/2])
+  .precision(0.1);
+
+const path = d3.geoPath().projection(projection);
+
+const defs = svg.append("defs");
+
+const oceanGrad = defs.append("linearGradient")
+  .attr("id", "oceanGrad").attr("x1", 0).attr("y1", 0).attr("x2", 0).attr("y2", 1);
+oceanGrad.append("stop").attr("offset", "0%").attr("stop-color", "#0a1628");
+oceanGrad.append("stop").attr("offset", "100%").attr("stop-color", "#050d1c");
+
+const prGrad = defs.append("radialGradient").attr("id", "prGrad");
+prGrad.append("stop").attr("offset", "0%").attr("stop-color", "#3b82f6");
+prGrad.append("stop").attr("offset", "100%").attr("stop-color", "#E4002B");
+
+const zoomLayer = svg.append("g").attr("class", "zoom-layer");
+
+zoomLayer.append("rect")
+  .attr("x", -10000).attr("y", -10000)
+  .attr("width", 21000).attr("height", 21000)
+  .attr("fill", "url(#oceanGrad)");
+
+const graticule = d3.geoGraticule();
+zoomLayer.append("path")
+  .datum(graticule())
+  .attr("d", path)
+  .attr("fill", "none")
+  .attr("stroke", "#1c2a48")
+  .attr("stroke-width", 0.4)
+  .attr("opacity", 0.4);
+
+const countriesG = zoomLayer.append("g").attr("class", "countries");
+const linesG = zoomLayer.append("g").attr("class", "lines");
+const markersG = zoomLayer.append("g").attr("class", "markers");
+
+let currentK = 1;
+const zoom = d3.zoom()
+  .scaleExtent([1, 12])
+  .on("zoom", (event) => {
+    currentK = event.transform.k;
+    zoomLayer.attr("transform", event.transform);
+    markersG.selectAll(".marker-content").attr("transform", `scale(${1/currentK})`);
+  });
+
+svg.call(zoom);
+
+document.getElementById("zoomIn").addEventListener("click", () => {
+  svg.transition().duration(250).call(zoom.scaleBy, 1.6);
+});
+document.getElementById("zoomOut").addEventListener("click", () => {
+  svg.transition().duration(250).call(zoom.scaleBy, 1/1.6);
+});
+document.getElementById("zoomReset").addEventListener("click", () => {
+  svg.transition().duration(350).call(zoom.transform, d3.zoomIdentity);
+});
+
+const mapLoading = document.getElementById("mapLoading");
+
+fetch("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json")
+  .then(r => r.json())
+  .then(world => {
+    const countries = topojson.feature(world, world.objects.countries);
+    countriesG.selectAll("path")
+      .data(countries.features)
+      .enter().append("path")
+      .attr("d", path)
+      .attr("class", "country")
+      .attr("fill", "#1c2244")
+      .attr("stroke", "#2a3160")
+      .attr("stroke-width", 0.4);
+
+    drawMarkers();
+    mapLoading.classList.add("hide");
+  })
+  .catch(err => {
+    console.error("Error cargando mapa:", err);
+    mapLoading.innerHTML = '<div style="color:#f87171;font-size:13px;text-align:center;line-height:1.6">⚠ Error cargando el mapa mundial<br><span style="color:#94a3b8;font-size:11px">Verifica la conexión a internet. El dashboard funciona sin mapa.</span></div>';
+  });
+
+function drawMarkers(){
+  const prXY = projection([-66.59, 18.22]);
+
+  const targets = [
+    { id:"UK", coords:[-0.1, 51.5], count:5, type:"op", leadId:"A2-05", label:"REINO UNIDO", labelPos:"above" },
+    { id:"CA", coords:[-75.7, 45.4], count:1, type:"sig", leadId:"A2-04", label:"CANADÁ", labelPos:"above" },
+    { id:"US", coords:[-80.19, 25.76], count:1, type:"sig", leadId:"A2-02", label:"EE.UU.", labelPos:"below" },
+    { id:"MX", coords:[-99.13, 19.43], count:1, type:"lic", leadId:"A2-09", label:"MÉXICO", labelPos:"left" },
+    { id:"DO", coords:[-69.9, 18.5], count:1, type:"lic", leadId:"A2-10", label:"R. DOM.", labelPos:"right" },
+    { id:"PA", coords:[-79.52, 8.98], count:1, type:"desc", leadId:"A2-07", label:"PANAMÁ", labelPos:"left" }
+  ];
+
+  const colors = { op:"#22c55e", sig:"#f59e0b", lic:"#3b82f6", desc:"#475569" };
+
+  targets.forEach(t => {
+    const tXY = projection(t.coords);
+    const midX = (prXY[0] + tXY[0]) / 2;
+    const midY = (prXY[1] + tXY[1]) / 2 - Math.abs(tXY[0] - prXY[0]) * 0.22;
+    linesG.append("path")
+      .attr("d", `M${prXY[0]},${prXY[1]} Q${midX},${midY} ${tXY[0]},${tXY[1]}`)
+      .attr("fill", "none")
+      .attr("stroke", t.type === "desc" ? "#475569" : "#E4002B")
+      .attr("stroke-width", 1.4)
+      .attr("stroke-dasharray", "4 4")
+      .attr("opacity", t.type === "desc" ? 0.35 : 0.6)
+      .attr("stroke-linecap", "round");
+  });
+
+  const prMarker = markersG.append("g")
+    .attr("class", "marker marker-pr")
+    .attr("transform", `translate(${prXY[0]},${prXY[1]})`);
+  const prContent = prMarker.append("g").attr("class", "marker-content");
+
+  prContent.append("circle")
+    .attr("r", 20).attr("fill", "none")
+    .attr("stroke", "#E4002B").attr("stroke-width", 2).attr("opacity", 0.5)
+    .append("animate")
+    .attr("attributeName", "r")
+    .attr("values", "20;34;20")
+    .attr("dur", "2.5s")
+    .attr("repeatCount", "indefinite");
+
+  prContent.append("circle")
+    .attr("r", 18).attr("fill", "url(#prGrad)")
+    .attr("stroke", "white").attr("stroke-width", 2.5);
+
+  prContent.append("text")
+    .attr("text-anchor", "middle").attr("dy", "5")
+    .attr("fill", "white").attr("font-weight", 800).attr("font-size", 13).text("PR");
+
+  prContent.append("text")
+    .attr("text-anchor", "middle").attr("y", 34)
+    .attr("fill", "#94a3b8").attr("font-size", 9).attr("font-weight", 700)
+    .attr("letter-spacing", 0.5).text("PUERTO RICO");
+
+  targets.forEach(t => {
+    const xy = projection(t.coords);
+    const r = t.count === 1 ? 11 : 16;
+
+    const m = markersG.append("g")
+      .attr("class", `marker marker-${t.id}`)
+      .attr("transform", `translate(${xy[0]},${xy[1]})`)
+      .style("cursor", "pointer")
+      .on("click", (event) => {
+        event.stopPropagation();
+        const lead = leads.find(l => l.id === t.leadId);
+        if (lead) openModal(lead);
+      });
+
+    const c = m.append("g").attr("class", "marker-content");
+
+    c.append("circle")
+      .attr("r", r)
+      .attr("fill", colors[t.type])
+      .attr("stroke", "white").attr("stroke-width", 1.8)
+      .attr("opacity", t.type === "desc" ? 0.55 : 1);
+
+    c.append("text")
+      .attr("text-anchor", "middle").attr("dy", "4")
+      .attr("fill", "white").attr("font-weight", 800)
+      .attr("font-size", t.count === 1 ? 10 : 12)
+      .text(t.type === "desc" ? "✕" : t.count);
+
+    let labelY = 0, labelX = 0, anchor = "middle";
+    if (t.labelPos === "above") { labelY = -r - 5; }
+    else if (t.labelPos === "below") { labelY = r + 12; }
+    else if (t.labelPos === "left") { labelY = 3; labelX = -r - 4; anchor = "end"; }
+    else if (t.labelPos === "right") { labelY = 3; labelX = r + 4; anchor = "start"; }
+
+    c.append("text")
+      .attr("text-anchor", anchor).attr("x", labelX).attr("y", labelY)
+      .attr("fill", "#94a3b8").attr("font-size", 9).attr("font-weight", 700)
+      .attr("letter-spacing", 0.4).text(t.label);
+  });
+}
+
+renderTable();
+</script>
+</body>
+</html>
